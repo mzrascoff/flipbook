@@ -52,9 +52,23 @@ export async function decodePhoto(file: File): Promise<ImageBitmap> {
 }
 
 /**
+ * One scratch canvas for every preview we render. WebKit enforces a page-wide
+ * cap on canvas memory and does not free a backing store promptly, so creating
+ * one per photo in an import loop is how a large import starts failing halfway
+ * through with `getContext` returning null.
+ */
+let scratch: HTMLCanvasElement | null = null;
+
+function getScratch(w: number, h: number) {
+  scratch ??= document.createElement("canvas");
+  scratch.width = w;
+  scratch.height = h;
+  return scratch;
+}
+
+/**
  * Renders a bitmap down to a JPEG no larger than `maxEdge` on its long side.
- * Used for thumbnails and preview playback so the browser, not us, decides
- * when to evict decoded pixels.
+ * Used for the thumbnails and for preview playback.
  */
 export async function makePreviewJpeg(
   bitmap: ImageBitmap,
@@ -65,11 +79,10 @@ export async function makePreviewJpeg(
   const w = Math.max(1, Math.round(bitmap.width * scale));
   const h = Math.max(1, Math.round(bitmap.height * scale));
 
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
+  const canvas = getScratch(w, h);
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Could not get a 2D canvas context");
+  ctx.clearRect(0, 0, w, h);
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(bitmap, 0, 0, w, h);
 

@@ -131,10 +131,15 @@ export async function estimateOffsets(
 }
 
 /**
- * The rectangle present in every photo once drift is accounted for. Returns the
- * full frame when the drift is negligible, so a steady series is never cropped.
+ * The rectangle present in every photo once drift is accounted for.
+ *
+ * Returns `null` when registering the series would cost more than a third of
+ * the picture in either direction — the caller must then abandon alignment
+ * entirely, offsets included. Returning the full frame here instead would be a
+ * trap: the offsets would still get applied against an unshrunk window, sliding
+ * every photo partly off the frame.
  */
-export function commonCrop(offsets: Offset[]): SourceRect {
+export function commonCrop(offsets: Offset[]): SourceRect | null {
   const dxs = offsets.map((o) => o.dx);
   const dys = offsets.map((o) => o.dy);
   const x0 = Math.max(0, -Math.min(...dxs));
@@ -144,8 +149,9 @@ export function commonCrop(offsets: Offset[]): SourceRect {
 
   const w = x1 - x0;
   const h = y1 - y0;
-  // Refuse to throw away more than a third of the picture in either direction.
-  if (w < 0.66 || h < 0.66) return FULL_FRAME;
+  if (w < 0.66 || h < 0.66) return null;
+  // A steady series measures as the full frame, and is therefore never cropped.
+  if (w > 0.999 && h > 0.999) return FULL_FRAME;
   return { x: x0, y: y0, w, h };
 }
 

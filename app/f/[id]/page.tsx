@@ -6,6 +6,16 @@ import { getFlipbook } from "@/lib/flipbooks";
 
 export const revalidate = 3600;
 
+/**
+ * Empty on purpose: no id is known at build time. Declaring it at all is what
+ * registers this route for on-demand ISR — without it Next 16 treats a dynamic
+ * segment as fully dynamic, `revalidate` above is inert, and every view of an
+ * unchanging page (including every link unfurl) is a fresh function invocation.
+ */
+export function generateStaticParams() {
+  return [] as { id: string }[];
+}
+
 export async function generateMetadata({
   params,
 }: PageProps<"/f/[id]">): Promise<Metadata> {

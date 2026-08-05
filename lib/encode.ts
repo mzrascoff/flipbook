@@ -29,11 +29,17 @@ import type { Photo, Settings } from "./types";
 export type EncodeStage = "aligning" | "encoding" | "finishing";
 
 /** Where each photo sits once drift is measured, plus the rectangle they share. */
-export type Alignment = { offsets: Offset[]; crop: SourceRect };
+export type Alignment = {
+  offsets: Offset[];
+  crop: SourceRect;
+  /** True when the series moved too much to register, so nothing was applied. */
+  gaveUp: boolean;
+};
 
-export const NO_ALIGNMENT = (count: number): Alignment => ({
+export const NO_ALIGNMENT = (count: number, gaveUp = false): Alignment => ({
   offsets: Array.from({ length: count }, () => ({ dx: 0, dy: 0 })),
   crop: FULL_FRAME,
+  gaveUp,
 });
 
 /** Measures handheld drift across a series. Safe to run ahead of encoding. */
@@ -44,7 +50,10 @@ export async function computeAlignment(
 ): Promise<Alignment> {
   if (photos.length < 2) return NO_ALIGNMENT(photos.length);
   const offsets = await estimateOffsets(photos, onProgress, signal);
-  return { offsets, crop: commonCrop(offsets) };
+  const crop = commonCrop(offsets);
+  // Abandoning alignment means abandoning the offsets too, not just the crop.
+  if (!crop) return NO_ALIGNMENT(photos.length, true);
+  return { offsets, crop, gaveUp: false };
 }
 
 export type EncodeProgress = {
@@ -206,6 +215,13 @@ export async function encodeFlipbook(
   const buffer = output.target.buffer;
   if (!buffer) throw new Error("The encoder produced no data");
 
+  const poster = posterBlob ?? (await canvasToJpeg(canvas));
+
+  // Hand the frame canvas' backing store back before returning. Re-exporting a
+  // few times at 2160px would otherwise leave a pile of them for the collector.
+  canvas.width = 0;
+  canvas.height = 0;
+
   return {
     blob: new Blob([buffer as BlobPart], { type: output.format.mimeType }),
     contentType: output.format.mimeType,
@@ -216,7 +232,7 @@ export async function encodeFlipbook(
     frames: frameIndex,
     fps: settings.fps,
     codec,
-    posterBlob: posterBlob ?? (await canvasToJpeg(canvas)),
+    posterBlob: poster,
   };
 }
 

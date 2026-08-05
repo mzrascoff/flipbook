@@ -8,6 +8,7 @@ type Props = {
   photoCount: number;
   maxSizeOptions: number[];
   aligning: { done: number; total: number } | null;
+  alignOutcome: "cropped" | "steady" | "gave-up" | null;
   alignCropped: number | null;
   onChange: (patch: Partial<Settings>) => void;
 };
@@ -21,6 +22,7 @@ export default function Controls({
   photoCount,
   maxSizeOptions,
   aligning,
+  alignOutcome,
   alignCropped,
   onChange,
 }: Props) {
@@ -112,11 +114,13 @@ export default function Controls({
             Measuring drift… {aligning.done}/{aligning.total}
           </p>
         )}
-        {!aligning && settings.align && alignCropped !== null && (
+        {!aligning && alignOutcome && (
           <p className="pl-7 text-xs text-neutral-500" role="status">
-            {alignCropped === 0
-              ? "Already steady — nothing cropped."
-              : `Cropped to the shared area (about ${alignCropped}% of each photo trimmed).`}
+            {alignOutcome === "steady" && "Already steady — nothing cropped."}
+            {alignOutcome === "cropped" &&
+              `Cropped to the shared area (about ${alignCropped}% of each photo trimmed).`}
+            {alignOutcome === "gave-up" &&
+              "These moved too much to line up — left exactly as shot."}
           </p>
         )}
       </fieldset>

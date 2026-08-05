@@ -82,7 +82,25 @@ export default function Studio() {
     setResult({ encoded, url, key: exports.current });
   }, []);
 
-  const clearResult = useCallback(() => publishResult(null), [publishResult]);
+  /**
+   * Throws away a finished video and any stale error together. Every change
+   * that could invalidate an export routes through here, so the panel can never
+   * show one series' video under another series' name.
+   */
+  const clearResult = useCallback(() => {
+    publishResult(null);
+    setError(null);
+  }, [publishResult]);
+
+  /** Moving to another series invalidates the export and resumes playback. */
+  const selectSeries = useCallback(
+    (id: string) => {
+      setActiveId(id);
+      clearResult();
+      setPlaying(true);
+    },
+    [clearResult],
+  );
 
   useEffect(
     () => () => {
@@ -92,12 +110,15 @@ export default function Studio() {
   );
 
   const active = series.find((item) => item.id === activeId) ?? null;
+  // Keyed on the photo ids, not the Series object: renaming replaces the object
+  // and would otherwise tear down and restart preview playback per keystroke.
+  const activeIds = active?.photoIds;
   const activePhotos = useMemo(
     () =>
-      (active?.photoIds ?? [])
+      (activeIds ?? [])
         .map((id) => photos.get(id))
         .filter((photo): photo is Photo => Boolean(photo)),
-    [active, photos],
+    [activeIds, photos],
   );
 
   /* Offer only the export sizes this device can actually encode. */
@@ -202,7 +223,9 @@ export default function Studio() {
     setSeries((previous) =>
       previous.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     );
-    clearResult();
+    // A rename only changes the download filename, so it must not throw away a
+    // video someone just waited for. Changing which photos are in the series does.
+    if (patch.photoIds) clearResult();
   }
 
   function forgetPhotos(ids: string[]) {
@@ -319,9 +342,21 @@ export default function Studio() {
     [activePhotos, settings.maxLongEdge, exportCrop],
   );
   const padded = needsPadding(activePhotos, exportFrame, exportCrop);
-  const cropPercent =
+
+  /* Three distinct outcomes: it worked, it was already steady, or the series
+     moved too much to register. Zero percent cropped meant two of those. */
+  const alignOutcome: "cropped" | "steady" | "gave-up" | null = !(
     settings.align && alignment
-      ? Math.round((1 - Math.min(alignment.crop.w, alignment.crop.h)) * 100)
+  )
+    ? null
+    : alignment.gaveUp
+      ? "gave-up"
+      : alignment.crop.w > 0.999 && alignment.crop.h > 0.999
+        ? "steady"
+        : "cropped";
+  const cropPercent =
+    alignOutcome === "cropped"
+      ? Math.round((1 - Math.min(alignment!.crop.w, alignment!.crop.h)) * 100)
       : null;
 
   return (
@@ -344,7 +379,7 @@ export default function Studio() {
               series={series}
               photos={photos}
               activeId={activeId}
-              onSelect={setActiveId}
+              onSelect={selectSeries}
               onRename={(id, title) => patchSeries(id, { title })}
               onMergeUp={mergeUp}
               onDelete={deleteSeries}
@@ -405,6 +440,7 @@ export default function Studio() {
               photoCount={activePhotos.length}
               maxSizeOptions={sizeOptions}
               aligning={aligning}
+              alignOutcome={alignOutcome}
               alignCropped={cropPercent}
               onChange={(patch) => {
                 setSettings((previous) => ({ ...previous, ...patch }));
