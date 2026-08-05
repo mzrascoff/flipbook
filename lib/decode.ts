@@ -92,13 +92,3 @@ export async function makePreviewJpeg(
   if (!blob) throw new Error("Could not encode the preview image");
   return blob;
 }
-
-/** Waits for an object URL to be decoded into a drawable image element. */
-export function loadImageElement(url: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Could not load the preview image"));
-    img.src = url;
-  });
-}

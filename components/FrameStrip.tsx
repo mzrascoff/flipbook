@@ -102,7 +102,7 @@ export default function FrameStrip({
   );
 }
 
-function Frame({
+const Frame = memo(function Frame({
   photo,
   index,
   count,
@@ -115,9 +115,9 @@ function Frame({
   index: number;
   count: number;
   active: boolean;
-  onRemove: () => void;
-  onSplit: () => void;
-  onMove: (delta: number) => void;
+  onRemove: (id: string) => void;
+  onSplit: (index: number) => void;
+  onMove: (index: number, delta: number) => void;
 }) {
   const {
     attributes,
@@ -141,7 +141,7 @@ function Frame({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={photo.previewUrl}
+        src={photo.thumbUrl}
         alt={`Frame ${index + 1}`}
         className="h-24 w-auto max-w-40 rounded object-contain"
         draggable={false}
@@ -166,7 +166,7 @@ function Frame({
       <div className="absolute inset-x-1 bottom-1 flex items-center justify-between gap-1 rounded bg-black/60 px-1 py-0.5">
         <button
           type="button"
-          onClick={() => onMove(-1)}
+          onClick={() => onMove(index, -1)}
           disabled={index === 0}
           aria-label={`Move frame ${index + 1} earlier`}
           className="px-1 text-xs text-white disabled:opacity-30"
@@ -176,7 +176,7 @@ function Frame({
         {index > 0 && (
           <button
             type="button"
-            onClick={onSplit}
+            onClick={() => onSplit(index)}
             title="Start a new series here"
             className="px-1 text-[10px] text-white"
           >
@@ -185,7 +185,7 @@ function Frame({
         )}
         <button
           type="button"
-          onClick={onRemove}
+          onClick={() => onRemove(photo.id)}
           aria-label={`Remove frame ${index + 1}`}
           className="px-1 text-xs text-white"
         >
@@ -193,7 +193,7 @@ function Frame({
         </button>
         <button
           type="button"
-          onClick={() => onMove(1)}
+          onClick={() => onMove(index, 1)}
           disabled={index === count - 1}
           aria-label={`Move frame ${index + 1} later`}
           className="px-1 text-xs text-white disabled:opacity-30"
@@ -203,4 +203,4 @@ function Frame({
       </div>
     </li>
   );
-}
+});

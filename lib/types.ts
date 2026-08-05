@@ -8,10 +8,14 @@ export type Photo = {
   /** Original pixel dimensions, after EXIF orientation is applied. */
   width: number;
   height: number;
-  /** Object URL of a downscaled JPEG used for thumbnails and preview playback. */
+  /** Object URL of a downscaled JPEG used for preview playback and alignment. */
   previewUrl: string;
-  /** Decoded element for the preview URL, ready to draw. */
-  previewImg: HTMLImageElement;
+  /**
+   * Object URL of a small thumbnail for the strip and series list. This is the
+   * only image the UI keeps pointed at for the whole session, so it is the only
+   * one whose decoded pixels stay resident per photo.
+   */
+  thumbUrl: string;
 };
 
 export type Series = {

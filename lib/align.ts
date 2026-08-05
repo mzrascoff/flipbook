@@ -23,7 +23,7 @@ const STRIDE = 2;
 type Gray = { data: Uint8Array; w: number; h: number };
 
 function toGray(
-  img: HTMLImageElement,
+  img: ImageBitmap,
   w: number,
   h: number,
   canvas: HTMLCanvasElement,
@@ -96,13 +96,27 @@ export async function estimateOffsets(
   const fineH = Math.max(24, Math.round(FINE_WIDTH / aspect));
   const canvas = document.createElement("canvas");
 
-  let prevCoarse = toGray(photos[0].previewImg, COARSE_WIDTH, coarseH, canvas);
-  let prevFine = toGray(photos[0].previewImg, FINE_WIDTH, fineH, canvas);
+  /* Decode one preview at a time and close it as soon as its grayscale grids
+     are read — the grids are tiny, and this never holds more than one decoded
+     preview no matter how long the series is. */
+  const grays = async (photo: Photo): Promise<[Gray, Gray]> => {
+    const blob = await fetch(photo.previewUrl).then((r) => r.blob());
+    const bitmap = await createImageBitmap(blob);
+    try {
+      return [
+        toGray(bitmap, COARSE_WIDTH, coarseH, canvas),
+        toGray(bitmap, FINE_WIDTH, fineH, canvas),
+      ];
+    } finally {
+      bitmap.close();
+    }
+  };
+
+  let [prevCoarse, prevFine] = await grays(photos[0]);
 
   for (let i = 1; i < photos.length; i++) {
     signal?.throwIfAborted();
-    const coarse = toGray(photos[i].previewImg, COARSE_WIDTH, coarseH, canvas);
-    const fine = toGray(photos[i].previewImg, FINE_WIDTH, fineH, canvas);
+    const [coarse, fine] = await grays(photos[i]);
 
     const rough = bestShift(prevCoarse, coarse, 0, 0, COARSE_RADIUS);
     const ratio = FINE_WIDTH / COARSE_WIDTH;

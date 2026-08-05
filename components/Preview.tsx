@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { cropForOffset } from "@/lib/align";
 import type { Alignment } from "@/lib/encode";
 import { computeFrameSize, drawPhotoFrame } from "@/lib/frame";
+import { PREFETCH_AHEAD, load, peek, prefetch } from "@/lib/previewCache";
 import { buildBeats } from "@/lib/timing";
 import type { Photo, Settings } from "@/lib/types";
 
@@ -64,15 +65,25 @@ export default function Preview({
     }
     const cycle = clock;
 
-    const draw = (beatIndex: number) => {
-      const beat = beats[beatIndex];
-      const photo = photos[beat.photoIndex];
-      if (!photo) return;
+    let disposed = false;
+    let shown = 0;
+
+    /**
+     * Decoded previews come from a small shared cache rather than living on
+     * each Photo — see lib/previewCache.ts. Playback is sequential, so warming
+     * the next couple of beats keeps a miss rare; when one does happen, the
+     * previous frame simply holds until the decode lands a few ms later, and
+     * the late frame is dropped if playback has already moved on.
+     */
+    const render = (
+      beat: (typeof beats)[number],
+      img: HTMLImageElement,
+    ) => {
       drawPhotoFrame(
         ctx,
-        photo.previewImg,
-        photo.previewImg.naturalWidth,
-        photo.previewImg.naturalHeight,
+        img,
+        img.naturalWidth,
+        img.naturalHeight,
         frame,
         useAlignment
           ? cropForOffset(useAlignment.crop, useAlignment.offsets[beat.photoIndex])
@@ -81,12 +92,37 @@ export default function Preview({
       onFrame(beat.photoIndex);
     };
 
+    const draw = (beatIndex: number) => {
+      const beat = beats[beatIndex];
+      const photo = photos[beat.photoIndex];
+      if (!photo) return;
+      const resident = peek(photo);
+      if (resident) {
+        render(beat, resident);
+      } else {
+        void load(photo).then((img) => {
+          if (!disposed && img && shown === beatIndex) render(beat, img);
+        });
+      }
+      // Warm the photos of the next few beats, in beat order — boomerang and
+      // holds mean the next photo is not always the next index.
+      prefetch(
+        Array.from({ length: PREFETCH_AHEAD }, (_, i) => {
+          const next = beats[(beatIndex + 1 + i) % beats.length];
+          return photos[next.photoIndex];
+        }),
+      );
+    };
+
     draw(0);
-    if (!playing || beats.length < 2) return;
+    if (!playing || beats.length < 2) {
+      return () => {
+        disposed = true;
+      };
+    }
 
     let raf = 0;
     let start = performance.now();
-    let shown = 0;
 
     const tick = (now: number) => {
       let elapsed = (now - start) / 1000;
@@ -104,7 +140,10 @@ export default function Preview({
     };
 
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(raf);
+    };
   }, [photos, settings, useAlignment, playing, frame, onFrame]);
 
   if (photos.length === 0) return null;

@@ -20,7 +20,8 @@ import {
 } from "@/lib/encode";
 import { computeFrameSize, needsPadding } from "@/lib/frame";
 import { groupByCaptureTime, newSeries } from "@/lib/group";
-import { importPhotos, type ImportProgress } from "@/lib/import";
+import { MAX_PHOTOS, importPhotos, type ImportProgress } from "@/lib/import";
+import { forget as forgetPreviews } from "@/lib/previewCache";
 import {
   DEFAULT_SETTINGS,
   type Photo,
@@ -212,14 +213,42 @@ export default function Studio() {
 
   const addFiles = useCallback(async (files: File[]) => {
     setError(null);
+    const room = MAX_PHOTOS - photos.size;
+    if (room <= 0) {
+      setError(
+        `This session already holds ${MAX_PHOTOS} photos — the most a phone can comfortably keep open. Remove some photos or reload to start fresh.`,
+      );
+      return;
+    }
     setImporting({ done: 0, total: files.length, name: "" });
     try {
-      const outcome = await importPhotos(files, setImporting);
+      const outcome = await importPhotos(files, room, setImporting);
       setSkipped(outcome.skipped);
-      if (outcome.photos.length === 0) {
-        if (outcome.skipped.length > 0) {
-          setError("None of those files could be read as photos.");
+
+      /* One or two oddballs belong in the footer list, but when most of a
+         batch is skipped for one reason, that reason is the headline. Set
+         after clearResult below, which wipes the error along with the video. */
+      let headline: string | null = null;
+      if (outcome.skipped.length >= 3) {
+        const counts = new Map<string, number>();
+        for (const item of outcome.skipped) {
+          counts.set(item.reason, (counts.get(item.reason) ?? 0) + 1);
         }
+        const [reason, count] = [...counts.entries()].sort(
+          (a, b) => b[1] - a[1],
+        )[0];
+        if (count >= 3) {
+          headline = `Skipped ${count} of ${files.length} photos — ${reason.replace(/\.$/, "")}.`;
+        }
+      }
+
+      if (outcome.photos.length === 0) {
+        setError(
+          headline ??
+            (outcome.skipped.length > 0
+              ? "None of those files could be read as photos."
+              : null),
+        );
         return;
       }
 
@@ -232,6 +261,7 @@ export default function Studio() {
       setSeries((previous) => [...previous, ...groups]);
       setActiveId((previous) => previous ?? groups[0]?.id ?? null);
       clearResult();
+      if (headline) setError(headline);
     } catch (importError) {
       setError(
         importError instanceof Error
@@ -241,7 +271,7 @@ export default function Studio() {
     } finally {
       setImporting(null);
     }
-  }, [clearResult]);
+  }, [clearResult, photos.size]);
 
   function patchSeries(id: string, patch: Partial<Series>) {
     setSeries((previous) =>
@@ -253,11 +283,15 @@ export default function Studio() {
   }
 
   function forgetPhotos(ids: string[]) {
+    forgetPreviews(ids);
     setPhotos((previous) => {
       const next = new Map(previous);
       for (const id of ids) {
         const photo = next.get(id);
-        if (photo) URL.revokeObjectURL(photo.previewUrl);
+        if (photo) {
+          URL.revokeObjectURL(photo.previewUrl);
+          URL.revokeObjectURL(photo.thumbUrl);
+        }
         next.delete(id);
       }
       return next;
@@ -396,7 +430,20 @@ export default function Studio() {
       </header>
 
       {photos.size === 0 ? (
-        <Dropzone onFiles={addFiles} busy={Boolean(importing)} />
+        <>
+          <Dropzone onFiles={addFiles} busy={Boolean(importing)} />
+          {/* The usual banner lives in the export panel, which only exists
+              once photos are in — a first import that entirely fails still
+              needs somewhere to say so. */}
+          {error && (
+            <p
+              className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 dark:bg-red-950/50 dark:text-red-200"
+              role="alert"
+            >
+              {error}
+            </p>
+          )}
+        </>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[19rem_1fr] lg:grid-rows-[auto_1fr] lg:gap-8">
           <aside className="lg:col-start-1 lg:row-start-1">

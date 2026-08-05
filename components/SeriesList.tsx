@@ -53,7 +53,7 @@ export default function SeriesList({
                 {cover ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={cover.previewUrl}
+                    src={cover.thumbUrl}
                     alt=""
                     className="size-11 rounded-lg bg-white object-cover ring-1 ring-black/10"
                   />

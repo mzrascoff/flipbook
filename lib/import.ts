@@ -1,9 +1,24 @@
-import { decodePhoto, loadImageElement, makePreviewJpeg } from "./decode";
+import { decodePhoto, makePreviewJpeg } from "./decode";
 import { readCaptureTime } from "./exif";
 import type { Photo } from "./types";
 
-/** Long edge of the working copy used for thumbnails, preview and alignment. */
+/** Long edge of the working copy used for preview playback and alignment. */
 const PREVIEW_EDGE = 900;
+
+/**
+ * Long edge of the strip/series thumbnails. The strip renders them 96px tall,
+ * so 240 covers a 2x display with room to spare at ~0.15 MB decoded each —
+ * against ~2.4 MB for a decoded preview.
+ */
+const THUMB_EDGE = 240;
+
+/**
+ * The most photos a session will hold. Each one costs a decoded thumbnail plus
+ * bookkeeping for as long as the tab lives, and imports transiently decode at
+ * full resolution — an uncapped import is how iOS Safari runs out of memory
+ * and silently reloads the tab.
+ */
+export const MAX_PHOTOS = 60;
 
 let counter = 0;
 
@@ -23,20 +38,28 @@ function isImage(file: File) {
 
 /**
  * Reads a batch of photos into working state: capture time, real dimensions,
- * and one downscaled JPEG per photo.
+ * and two downscaled JPEGs per photo — a small thumbnail the UI retains, and a
+ * preview-sized copy that is only decoded on demand (see lib/previewCache.ts).
  *
- * The downscaled copy is what the strip and the preview draw, so the browser
- * manages that memory and can evict it. Full-resolution pixels are only ever
- * decoded during export, one photo at a time.
+ * Nothing decoded is retained here. A decoded image stays resident for as long
+ * as JavaScript holds a strong reference to it — the browser cannot evict it —
+ * so holding one preview-sized element per photo is ~2.4 MB each, and a large
+ * import is exactly when that gets a mobile tab killed. Full-resolution pixels
+ * are only ever decoded one photo at a time, here and during export.
+ *
+ * `limit` bounds how many photos this import may add (the caller passes what
+ * is left under MAX_PHOTOS); files beyond it are reported as skipped.
  */
 export async function importPhotos(
   files: File[],
+  limit: number,
   onProgress?: (progress: ImportProgress) => void,
   signal?: AbortSignal,
 ): Promise<ImportOutcome> {
   const photos: Photo[] = [];
   const skipped: { name: string; reason: string }[] = [];
-  const candidates = files.filter(isImage);
+  const images = files.filter(isImage);
+  const candidates = images.slice(0, Math.max(0, limit));
 
   for (const [index, file] of candidates.entries()) {
     signal?.throwIfAborted();
@@ -49,6 +72,7 @@ export async function importPhotos(
       ]);
 
       let previewUrl: string;
+      let thumbUrl: string;
       let width: number;
       let height: number;
       try {
@@ -56,6 +80,9 @@ export async function importPhotos(
         height = bitmap.height;
         previewUrl = URL.createObjectURL(
           await makePreviewJpeg(bitmap, PREVIEW_EDGE),
+        );
+        thumbUrl = URL.createObjectURL(
+          await makePreviewJpeg(bitmap, THUMB_EDGE),
         );
       } finally {
         bitmap.close();
@@ -69,7 +96,7 @@ export async function importPhotos(
         width,
         height,
         previewUrl,
-        previewImg: await loadImageElement(previewUrl),
+        thumbUrl,
       });
     } catch (error) {
       skipped.push({
@@ -85,6 +112,9 @@ export async function importPhotos(
     name: "",
   });
 
+  for (const file of images.slice(candidates.length)) {
+    skipped.push({ name: file.name, reason: `Over the ${MAX_PHOTOS}-photo limit` });
+  }
   for (const file of files) {
     if (!isImage(file)) skipped.push({ name: file.name, reason: "Not an image" });
   }
