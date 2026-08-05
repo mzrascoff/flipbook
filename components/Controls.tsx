@@ -8,7 +8,8 @@ type Props = {
   photoCount: number;
   maxSizeOptions: number[];
   aligning: { done: number; total: number } | null;
-  alignOutcome: "cropped" | "steady" | "gave-up" | null;
+  alignOutcome: "cropped" | "steady" | "gave-up" | "failed" | null;
+  alignFailed: string | null;
   alignCropped: number | null;
   onChange: (patch: Partial<Settings>) => void;
 };
@@ -23,6 +24,7 @@ export default function Controls({
   maxSizeOptions,
   aligning,
   alignOutcome,
+  alignFailed,
   alignCropped,
   onChange,
 }: Props) {
@@ -121,6 +123,8 @@ export default function Controls({
               `Cropped to the shared area (about ${alignCropped}% of each photo trimmed).`}
             {alignOutcome === "gave-up" &&
               "These moved too much to line up — left exactly as shot."}
+            {alignOutcome === "failed" &&
+              `Could not line these up (${alignFailed}) — left exactly as shot.`}
           </p>
         )}
       </fieldset>

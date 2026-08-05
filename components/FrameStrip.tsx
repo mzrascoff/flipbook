@@ -9,6 +9,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
+import { memo, useCallback } from "react";
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import {
   SortableContext,
@@ -56,11 +57,17 @@ export default function FrameStrip({
     onReorder(arrayMove(ids, from, to));
   }
 
-  function move(index: number, delta: number) {
-    const to = index + delta;
-    if (to < 0 || to >= photos.length) return;
-    onReorder(arrayMove(photos.map((p) => p.id), index, to));
-  }
+  /* Stable identities so the memoized frames below actually stay put. The
+     highlight moves several times a second during playback, and re-running a
+     useSortable hook per photo at that rate is real work on a phone. */
+  const move = useCallback(
+    (index: number, delta: number) => {
+      const to = index + delta;
+      if (to < 0 || to >= photos.length) return;
+      onReorder(arrayMove(photos.map((p) => p.id), index, to));
+    },
+    [photos, onReorder],
+  );
 
   return (
     <DndContext
@@ -84,9 +91,9 @@ export default function FrameStrip({
               index={index}
               count={photos.length}
               active={index === currentIndex}
-              onRemove={() => onRemove(photo.id)}
-              onSplit={() => onSplit(index)}
-              onMove={(delta) => move(index, delta)}
+              onRemove={onRemove}
+              onSplit={onSplit}
+              onMove={move}
             />
           ))}
         </ol>

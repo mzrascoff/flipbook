@@ -46,9 +46,16 @@ export default function Studio() {
     key: string;
     alignment: Alignment;
   } | null>(null);
+  /* Progress and failure are both keyed too, so a previous series' count or
+     error can never be shown against the current one. */
   const [alignProgress, setAlignProgress] = useState<{
+    key: string;
     done: number;
     total: number;
+  } | null>(null);
+  const [alignFailure, setAlignFailure] = useState<{
+    key: string;
+    message: string;
   } | null>(null);
 
   const [busy, setBusy] = useState<EncodeProgress | null>(null);
@@ -157,21 +164,28 @@ export default function Studio() {
   );
   const alignment =
     settings.align && measured?.key === alignKey ? measured.alignment : null;
+  const alignFailed =
+    settings.align && alignFailure?.key === alignKey ? alignFailure.message : null;
   const aligning =
-    settings.align && activePhotos.length > 1 && !alignment
-      ? (alignProgress ?? { done: 0, total: activePhotos.length - 1 })
+    settings.align && activePhotos.length > 1 && !alignment && !alignFailed
+      ? (alignProgress?.key === alignKey
+          ? { done: alignProgress.done, total: alignProgress.total }
+          : { done: 0, total: activePhotos.length - 1 })
       : null;
 
   /* Measure drift only when the user asks for alignment. */
   useEffect(() => {
     if (!settings.align || activePhotos.length < 2) return;
     if (measured?.key === alignKey) return;
+    if (alignFailure?.key === alignKey) return;
 
     const controller = new AbortController();
     computeAlignment(
       activePhotos,
       (done, total) => {
-        if (!controller.signal.aborted) setAlignProgress({ done, total });
+        if (!controller.signal.aborted) {
+          setAlignProgress({ key: alignKey, done, total });
+        }
       },
       controller.signal,
     )
@@ -180,11 +194,21 @@ export default function Studio() {
         setMeasured({ key: alignKey, alignment: next });
         setAlignProgress(null);
       })
-      .catch(() => {
-        if (!controller.signal.aborted) setAlignProgress(null);
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        // Without recording the failure, `aligning` stays true forever and the
+        // "Measuring drift…" line hangs at its last count with nothing said.
+        setAlignFailure({
+          key: alignKey,
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not measure how much these moved",
+        });
+        setAlignProgress(null);
       });
     return () => controller.abort();
-  }, [settings.align, activePhotos, alignKey, measured?.key]);
+  }, [settings.align, activePhotos, alignKey, measured?.key, alignFailure?.key]);
 
   const addFiles = useCallback(async (files: File[]) => {
     setError(null);
@@ -345,15 +369,16 @@ export default function Studio() {
 
   /* Three distinct outcomes: it worked, it was already steady, or the series
      moved too much to register. Zero percent cropped meant two of those. */
-  const alignOutcome: "cropped" | "steady" | "gave-up" | null = !(
-    settings.align && alignment
-  )
-    ? null
-    : alignment.gaveUp
-      ? "gave-up"
-      : alignment.crop.w > 0.999 && alignment.crop.h > 0.999
-        ? "steady"
-        : "cropped";
+  const alignOutcome: "cropped" | "steady" | "gave-up" | "failed" | null =
+    alignFailed
+      ? "failed"
+      : !(settings.align && alignment)
+        ? null
+        : alignment.gaveUp
+          ? "gave-up"
+          : alignment.crop.w > 0.999 && alignment.crop.h > 0.999
+            ? "steady"
+            : "cropped";
   const cropPercent =
     alignOutcome === "cropped"
       ? Math.round((1 - Math.min(alignment!.crop.w, alignment!.crop.h)) * 100)
@@ -441,6 +466,7 @@ export default function Studio() {
               maxSizeOptions={sizeOptions}
               aligning={aligning}
               alignOutcome={alignOutcome}
+              alignFailed={alignFailed}
               alignCropped={cropPercent}
               onChange={(patch) => {
                 setSettings((previous) => ({ ...previous, ...patch }));
