@@ -215,6 +215,15 @@ export async function encodeFlipbook(
   const buffer = output.target.buffer;
   if (!buffer) throw new Error("The encoder produced no data");
 
+  /* Constructing the Blob copies the bytes, which makes this the third copy of
+     the finished file in memory: BufferTarget's working buffer, the exact-size
+     slice it exposes as `.buffer`, and now the Blob. Only the Blob leaves this
+     function, so detach the slice immediately instead of waiting for the
+     collector — a 2160px export is tens of MB per copy. The working buffer
+     dies with `output` when this returns. */
+  const blob = new Blob([buffer as BlobPart], { type: output.format.mimeType });
+  (buffer as ArrayBuffer & { transfer?(length?: number): ArrayBuffer }).transfer?.(0);
+
   const poster = posterBlob ?? (await canvasToJpeg(canvas));
 
   // Hand the frame canvas' backing store back before returning. Re-exporting a
@@ -223,7 +232,7 @@ export async function encodeFlipbook(
   canvas.height = 0;
 
   return {
-    blob: new Blob([buffer as BlobPart], { type: output.format.mimeType }),
+    blob,
     contentType: output.format.mimeType,
     ext: isMp4 ? "mp4" : "webm",
     width: frame.width,
