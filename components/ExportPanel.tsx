@@ -3,12 +3,14 @@
 import { useState } from "react";
 
 import type { EncodeProgress, EncodeResult } from "@/lib/encode";
+import { FREE_EXPORTS } from "@/lib/license";
 import {
   canShareFiles,
   downloadVideo,
   saveFlipbook,
   shareVideo,
 } from "@/lib/share";
+import type { Gate } from "@/lib/useLicense";
 
 function fileSize(bytes: number) {
   return bytes < 1024 * 1024
@@ -19,6 +21,7 @@ function fileSize(bytes: number) {
 type Props = {
   title: string;
   photoCount: number;
+  gate: Gate;
   busy: EncodeProgress | null;
   result: EncodeResult | null;
   /**
@@ -38,6 +41,7 @@ type Props = {
 export default function ExportPanel({
   title,
   photoCount,
+  gate,
   busy,
   result,
   resultUrl,
@@ -49,7 +53,7 @@ export default function ExportPanel({
 }: Props) {
   return (
     <section className="flex flex-col gap-4">
-      {!result && (
+      {!result && gate.allowed && (
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -69,8 +73,22 @@ export default function ExportPanel({
               Cancel
             </button>
           )}
+          {!gate.license && !busy && (
+            <span className="text-xs text-neutral-500" data-testid="free-meter">
+              {gate.freeLeft} of {FREE_EXPORTS} free{" "}
+              {gate.freeLeft === 1 ? "video" : "videos"} left
+            </span>
+          )}
+          {gate.license && !busy && (
+            <span className="text-xs text-neutral-500" data-testid="license-status">
+              Licensed until{" "}
+              {new Date(gate.license.exp * 1000).toLocaleDateString()}
+            </span>
+          )}
         </div>
       )}
+
+      {!result && !gate.allowed && <Paywall gate={gate} />}
 
       {busy && (
         <div className="flex flex-col gap-1.5" role="status">
@@ -110,6 +128,98 @@ export default function ExportPanel({
         />
       )}
     </section>
+  );
+}
+
+/**
+ * Shown when the free meter is spent. Same plain voice as the rest of the
+ * app: what happened, what it costs, and a way in for people who already paid.
+ */
+function Paywall({ gate }: { gate: Gate }) {
+  const [pasting, setPasting] = useState(false);
+  const [token, setToken] = useState("");
+  const [state, setState] = useState<"idle" | "starting" | "bad-token">(
+    "idle",
+  );
+
+  async function buy() {
+    setState("starting");
+    try {
+      const response = await fetch("/api/license/checkout", { method: "POST" });
+      if (!response.ok) throw new Error();
+      const { url } = (await response.json()) as { url: string };
+      window.location.href = url;
+    } catch {
+      setState("idle");
+    }
+  }
+
+  async function activate() {
+    if (await gate.activate(token)) return; // Gate flips; this UI unmounts.
+    setState("bad-token");
+  }
+
+  return (
+    <div
+      className="flex flex-col gap-3 rounded-2xl bg-black/[0.03] p-5 dark:bg-white/[0.06]"
+      data-testid="paywall"
+    >
+      <p className="text-sm leading-relaxed">
+        Your {FREE_EXPORTS} free videos are made. A year of Flipbook is{" "}
+        <strong>$12</strong> — every video you can make, on any device.
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={buy}
+          disabled={state === "starting"}
+          data-testid="buy-button"
+          className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-50 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+        >
+          {state === "starting" ? "Opening checkout…" : "Buy a year — $12"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setPasting((value) => !value)}
+          className="text-sm text-neutral-500 underline"
+        >
+          Already bought it?
+        </button>
+      </div>
+      {pasting && (
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={token}
+            onChange={(event) => {
+              setToken(event.target.value);
+              setState("idle");
+            }}
+            placeholder="Paste your license"
+            aria-label="License"
+            data-testid="license-input"
+            className="min-w-0 flex-1 rounded-lg border border-black/15 bg-white px-3 py-2 text-xs outline-none focus:border-black/40 dark:border-white/20 dark:bg-neutral-900 dark:focus:border-white/50"
+          />
+          <button
+            type="button"
+            onClick={activate}
+            disabled={!token.trim()}
+            data-testid="activate-button"
+            className="rounded-full px-4 py-2 text-sm font-medium ring-1 ring-black/15 transition hover:bg-black/5 disabled:opacity-50 dark:ring-white/20 dark:hover:bg-white/10"
+          >
+            Activate
+          </button>
+          {state === "bad-token" && (
+            <p className="w-full text-xs text-red-700 dark:text-red-300" role="alert">
+              That license did not check out — it may be mistyped or expired.
+              The link in your Stripe receipt email re-issues it.
+            </p>
+          )}
+        </div>
+      )}
+      <p className="text-xs text-neutral-500">
+        Payment goes through Stripe. Your photos still never leave this device.
+      </p>
+    </div>
   );
 }
 

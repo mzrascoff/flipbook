@@ -28,6 +28,7 @@ import {
   type Series,
   type Settings,
 } from "@/lib/types";
+import { useLicense } from "@/lib/useLicense";
 
 const SIZE_OPTIONS = [720, 1080, 1440, 2160];
 
@@ -68,6 +69,7 @@ export default function Studio() {
   const [error, setError] = useState<string | null>(null);
   const [sizeOptions, setSizeOptions] = useState<number[]>([720, 1080]);
   const [saveEnabled, setSaveEnabled] = useState(false);
+  const gate = useLicense();
   const abort = useRef<AbortController | null>(null);
   const liveUrl = useRef<string | null>(null);
   const exports = useRef(0);
@@ -359,7 +361,7 @@ export default function Studio() {
   }
 
   async function exportVideo() {
-    if (activePhotos.length === 0) return;
+    if (activePhotos.length === 0 || !gate.allowed) return;
     const controller = new AbortController();
     abort.current = controller;
     setError(null);
@@ -373,6 +375,7 @@ export default function Studio() {
         alignment: settings.align ? (alignment ?? undefined) : undefined,
       });
       publishResult(next);
+      gate.recordExport();
     } catch (encodeError) {
       if (controller.signal.aborted) {
         setError(null);
@@ -524,6 +527,7 @@ export default function Studio() {
             <ExportPanel
               title={active?.title ?? "Flipbook"}
               photoCount={activePhotos.length}
+              gate={gate}
               busy={busy}
               result={result?.encoded ?? null}
               resultUrl={result?.url ?? null}
