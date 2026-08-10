@@ -32,7 +32,7 @@ export default function Dropzone({ onFiles, busy, compact, label }: Props) {
       }}
       className={[
         "flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed text-center transition",
-        compact ? "px-5 py-6" : "px-6 py-16",
+        compact ? "px-5 py-6" : "px-6 py-10",
         over
           ? "border-neutral-900 bg-neutral-900/5 dark:border-white dark:bg-white/5"
           : "border-black/15 dark:border-white/20",
@@ -50,11 +50,6 @@ export default function Dropzone({ onFiles, busy, compact, label }: Props) {
           event.target.value = "";
         }}
       />
-      {!compact && (
-        <p className="text-sm text-neutral-500">
-          A burst, or several tries at the same shot
-        </p>
-      )}
       <button
         type="button"
         disabled={busy}

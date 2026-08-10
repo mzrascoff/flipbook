@@ -426,14 +426,34 @@ export default function Studio() {
       <header className="flex flex-col gap-2">
         <h1 className="text-3xl font-medium tracking-tight">Flipbook</h1>
         <p className="max-w-prose text-sm leading-relaxed text-neutral-500">
-          Photos you shot as a series, played back slowly enough that you can
-          still see they were photographs. Nothing is filtered, retouched, or
-          invented — each one is just held a beat and cut hard to the next.
+          Your photos, played as a little film. Nothing invented — each one is
+          held a beat and cut hard to the next.
         </p>
       </header>
 
       {photos.size === 0 ? (
         <>
+          {/* The proof is older than the pitch: Muybridge's 1878 gallop was
+              the first photo series played fast enough to move. This is his,
+              exported by this tool from his eleven photographs. */}
+          <figure className="flex flex-col gap-2">
+            <video
+              src="/muybridge.mp4"
+              poster="/muybridge-poster.jpg"
+              autoPlay
+              muted
+              loop
+              playsInline
+              data-testid="sample-video"
+              className="mx-auto w-full max-w-2xl rounded-xl bg-white shadow-sm ring-1 ring-black/10"
+            />
+            <figcaption className="mx-auto text-xs text-neutral-500">
+              Eadweard Muybridge&apos;s galloping horse, 1878 — eleven
+              photographs, one beat each. The first flipbook, made with this
+              one.
+            </figcaption>
+          </figure>
+
           <Dropzone onFiles={addFiles} busy={Boolean(importing)} />
           {/* The usual banner lives in the export panel, which only exists
               once photos are in — a first import that entirely fails still
