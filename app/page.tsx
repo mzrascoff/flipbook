@@ -426,8 +426,7 @@ export default function Studio() {
       <header className="flex flex-col gap-2">
         <h1 className="text-3xl font-medium tracking-tight">Flipbook</h1>
         <p className="max-w-prose text-sm leading-relaxed text-neutral-500">
-          Your photos, played as a little film. Nothing invented — each one is
-          held a beat and cut hard to the next.
+          Your photos, played as a little film.
         </p>
       </header>
 
@@ -448,9 +447,7 @@ export default function Studio() {
               className="mx-auto w-full max-w-2xl rounded-xl bg-white shadow-sm ring-1 ring-black/10"
             />
             <figcaption className="mx-auto text-xs text-neutral-500">
-              Eadweard Muybridge&apos;s galloping horse, 1878 — eleven
-              photographs, one beat each. The first flipbook, made with this
-              one.
+              Eadweard Muybridge&apos;s galloping horse, 1878
             </figcaption>
           </figure>
 
