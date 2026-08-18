@@ -20,7 +20,12 @@ export async function GET(request: Request) {
 
   try {
     const session = await stripe.checkout.sessions.retrieve(sessionId);
-    if (session.payment_status !== "paid") {
+    // "no_payment_required" is what a checkout paid entirely with a 100%-off
+    // promotion code (a gift code) reports.
+    const settled =
+      session.payment_status === "paid" ||
+      session.payment_status === "no_payment_required";
+    if (!settled) {
       return NextResponse.json({ error: "Not paid" }, { status: 402 });
     }
 

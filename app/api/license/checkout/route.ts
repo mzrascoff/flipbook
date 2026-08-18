@@ -43,6 +43,10 @@ export async function POST(request: Request) {
       {
         mode: "payment",
         line_items: [{ price: await licensePriceId(), quantity: 1 }],
+        // Gift and promo codes are Stripe promotion codes, managed in the
+        // dashboard. A 100%-off code makes the session free; the claim route
+        // accepts its "no_payment_required" status.
+        allow_promotion_codes: true,
         // Not in the SDK's types until the preview version graduates.
         ...({ managed_payments: { enabled: true } } as object),
         success_url: `${origin}/license/success?session_id={CHECKOUT_SESSION_ID}`,

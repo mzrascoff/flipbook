@@ -68,6 +68,23 @@ creating and downloading flipbooks works either way.
 vercel link && vercel env pull
 ```
 
+## Licensing
+
+Three exports are free, counted in localStorage on the honor system. After
+that a year is $12 through Stripe Checkout. A license is a signed offline
+token (ECDSA P-256): the private key lives in `LICENSE_SIGNING_KEY`, the
+public key is baked into `lib/license.ts`, and nothing phones home.
+
+- The success page claims the token and stores it in localStorage plus a
+  cookie; the Stripe receipt link re-issues it on any device, any time.
+- `app/api/stripe/webhook` emails the token on purchase when
+  `RESEND_API_KEY` is set (from `LICENSE_EMAIL_FROM`, default
+  `licenses@flipbook.photos`). Point a Stripe webhook for
+  `checkout.session.completed` at `/api/stripe/webhook`.
+- Promo and gift codes are Stripe promotion codes — create them in the
+  dashboard; a 100%-off code is a gift. `node scripts/mint-license.mjs`
+  mints a pasteable gift token directly.
+
 ## Known limits
 
 - A fixed-size video means large photos get a uniform downscale (default 1080

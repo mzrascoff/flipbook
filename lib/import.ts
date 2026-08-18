@@ -13,12 +13,14 @@ const PREVIEW_EDGE = 900;
 const THUMB_EDGE = 240;
 
 /**
- * The most photos a session will hold. Each one costs a decoded thumbnail plus
- * bookkeeping for as long as the tab lives, and imports transiently decode at
- * full resolution — an uncapped import is how iOS Safari runs out of memory
- * and silently reloads the tab.
+ * The most photos a session will hold. Each one costs bookkeeping for as long
+ * as the tab lives, and imports transiently decode at full resolution — an
+ * uncapped import is how iOS Safari runs out of memory and silently reloads
+ * the tab. The strip's thumbnails decode lazily, so the resident cost is
+ * bounded by the viewport rather than the count, which is what makes a cap
+ * this size workable on a phone.
  */
-export const MAX_PHOTOS = 60;
+export const MAX_PHOTOS = 200;
 
 let counter = 0;
 

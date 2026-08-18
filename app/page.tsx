@@ -218,7 +218,7 @@ export default function Studio() {
     const room = MAX_PHOTOS - photos.size;
     if (room <= 0) {
       setError(
-        `This session already holds ${MAX_PHOTOS} photos — the most a phone can comfortably keep open. Remove some photos or reload to start fresh.`,
+        `This session already holds ${MAX_PHOTOS} photos — the most a browser can comfortably keep open. Remove some photos or reload to start fresh.`,
       );
       return;
     }

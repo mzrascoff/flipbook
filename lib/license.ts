@@ -77,9 +77,25 @@ export async function verifyLicense(
   }
 }
 
+/**
+ * The license lives in localStorage and in a cookie. Either alone is fragile:
+ * localStorage does not survive some privacy modes, and Safari caps
+ * script-set cookies at seven days under ITP. Between the two, and the
+ * receipt email that can re-issue the token, a paying customer should never
+ * find themselves locked out.
+ */
 export function storedLicense(): string | null {
   try {
-    return localStorage.getItem(TOKEN_KEY);
+    const local = localStorage.getItem(TOKEN_KEY);
+    if (local) return local;
+  } catch {
+    // Fall through to the cookie.
+  }
+  try {
+    const match = document.cookie
+      .split("; ")
+      .find((part) => part.startsWith(`${TOKEN_KEY}=`));
+    return match ? decodeURIComponent(match.slice(TOKEN_KEY.length + 1)) : null;
   } catch {
     return null;
   }
@@ -89,7 +105,18 @@ export function storeLicense(token: string) {
   try {
     localStorage.setItem(TOKEN_KEY, token);
   } catch {
-    // Private browsing without storage — the license just won't persist.
+    // Private browsing without storage — the cookie below still applies.
+  }
+  try {
+    document.cookie = [
+      `${TOKEN_KEY}=${encodeURIComponent(token)}`,
+      `max-age=${LICENSE_TERM_SECONDS}`,
+      "path=/",
+      "samesite=lax",
+      "secure",
+    ].join("; ");
+  } catch {
+    // No cookies either — the license only lasts the session.
   }
 }
 

@@ -143,6 +143,10 @@ const Frame = memo(function Frame({
       <img
         src={photo.thumbUrl}
         alt={`Frame ${index + 1}`}
+        // Lazy: with imports of up to MAX_PHOTOS the strip would otherwise
+        // hold every decoded thumbnail at once, which is real memory on a phone.
+        loading="lazy"
+        decoding="async"
         className="h-24 w-auto max-w-40 rounded object-contain"
         draggable={false}
       />
