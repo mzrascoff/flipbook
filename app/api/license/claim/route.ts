@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { LICENSE_TERM_SECONDS } from "@/lib/license";
-import { mintLicense } from "@/lib/licenseServer";
+import {
+  claimsForSession,
+  mintLicense,
+  sessionSettled,
+} from "@/lib/licenseServer";
 import { stripe } from "@/lib/stripe";
 
 /**
@@ -20,21 +23,11 @@ export async function GET(request: Request) {
 
   try {
     const session = await stripe.checkout.sessions.retrieve(sessionId);
-    // "no_payment_required" is what a checkout paid entirely with a 100%-off
-    // promotion code (a gift code) reports.
-    const settled =
-      session.payment_status === "paid" ||
-      session.payment_status === "no_payment_required";
-    if (!settled) {
+    if (!sessionSettled(session)) {
       return NextResponse.json({ error: "Not paid" }, { status: 402 });
     }
 
-    const claims = {
-      v: 1 as const,
-      email: session.customer_details?.email ?? "",
-      iat: session.created,
-      exp: session.created + LICENSE_TERM_SECONDS,
-    };
+    const claims = claimsForSession(session);
     return NextResponse.json({ token: mintLicense(claims), ...claims });
   } catch {
     return NextResponse.json({ error: "Unknown session" }, { status: 404 });

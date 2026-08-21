@@ -6,7 +6,9 @@
  * - the "Flipbook — one-year license" product, tax-coded as personal-use SaaS
  *   so Managed Payments can compute tax on it, with a $12 price under the
  *   lookup key the checkout route resolves at runtime;
- * - the production webhook endpoint for checkout.session.completed.
+ * - the production webhook endpoint for the events in WEBHOOK_EVENTS below.
+ *   An existing endpoint missing any of those events is updated in place, so
+ *   re-running after the list grows brings the live endpoint up to date.
  *
  * Usage: STRIPE_SECRET_KEY=… node scripts/stripe-setup.mjs [--webhook-secret-file <path>]
  * The webhook signing secret is only revealed on creation, so it is written
@@ -61,14 +63,35 @@ async function ensureProductAndPrice() {
   return { priceId: price.id, productId: product.id, created: true };
 }
 
+/**
+ * async_payment_succeeded covers delayed-notification payment methods, whose
+ * `completed` event arrives while the session is still unpaid.
+ */
+const WEBHOOK_EVENTS = [
+  "checkout.session.completed",
+  "checkout.session.async_payment_succeeded",
+];
+
 async function ensureWebhook(secretFile) {
   const endpoints = await stripe.webhookEndpoints.list({ limit: 100 });
   const existing = endpoints.data.find((e) => e.url === WEBHOOK_URL);
-  if (existing) return { webhookId: existing.id, created: false };
+  if (existing) {
+    // Re-running after WEBHOOK_EVENTS grows must update the live endpoint,
+    // not silently leave it on the old event list.
+    const missing = WEBHOOK_EVENTS.filter(
+      (event) => !existing.enabled_events.includes(event),
+    );
+    if (missing.length > 0) {
+      await stripe.webhookEndpoints.update(existing.id, {
+        enabled_events: WEBHOOK_EVENTS,
+      });
+    }
+    return { webhookId: existing.id, created: false, addedEvents: missing };
+  }
 
   const endpoint = await stripe.webhookEndpoints.create({
     url: WEBHOOK_URL,
-    enabled_events: ["checkout.session.completed"],
+    enabled_events: WEBHOOK_EVENTS,
     description: "Flipbook license purchases",
   });
   if (secretFile) writeFileSync(secretFile, endpoint.secret, { mode: 0o600 });

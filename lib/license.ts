@@ -108,9 +108,23 @@ export function storeLicense(token: string) {
     // Private browsing without storage — the cookie below still applies.
   }
   try {
+    /* The cookie lives exactly as long as the token does. Both callers verify
+       the token before storing it, so the payload parses; a multi-year gift
+       token must not lose its cookie at the one-year mark. */
+    let maxAge = LICENSE_TERM_SECONDS;
+    try {
+      const claims = JSON.parse(
+        new TextDecoder().decode(fromBase64(token.trim().split(".")[1])),
+      ) as LicenseClaims;
+      if (typeof claims.exp === "number") {
+        maxAge = Math.max(60, claims.exp - Math.floor(Date.now() / 1000));
+      }
+    } catch {
+      // Unparsable payload — fall back to the standard term.
+    }
     document.cookie = [
       `${TOKEN_KEY}=${encodeURIComponent(token)}`,
-      `max-age=${LICENSE_TERM_SECONDS}`,
+      `max-age=${maxAge}`,
       "path=/",
       "samesite=lax",
       "secure",

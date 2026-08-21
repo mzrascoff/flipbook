@@ -60,5 +60,10 @@ export function totalEncodedFrames(beats: Beat[], fps: number) {
   return beatUnits(beats) * encodeRate(fps).repeat;
 }
 
-/** Hard ceiling so a huge set cannot start an encode that never finishes. */
-export const MAX_ENCODED_FRAMES = 2400;
+/**
+ * Hard ceiling so a huge set cannot start an encode that never finishes.
+ * Sized so a full MAX_PHOTOS import exports at the slowest speed: 200 photos
+ * at 2 photos per second, with the default end holds, is (200 + 2) × 12
+ * repeats = 2424 frames. The two caps must not contradict each other.
+ */
+export const MAX_ENCODED_FRAMES = 2500;

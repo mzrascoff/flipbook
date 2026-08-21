@@ -1,14 +1,22 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 
-import { LICENSE_TERM_SECONDS } from "@/lib/license";
-import { mintLicense } from "@/lib/licenseServer";
+import {
+  claimsForSession,
+  mintLicense,
+  sessionSettled,
+} from "@/lib/licenseServer";
 import { stripe } from "@/lib/stripe";
 
 /**
- * Stripe webhook receiver, registered by scripts/stripe-setup.mjs for
- * checkout.session.completed. Logs every completed purchase (visible in
- * Vercel's runtime logs) and emails the buyer their license.
+ * Stripe webhook receiver, registered by scripts/stripe-setup.mjs. Logs every
+ * completed purchase (visible in Vercel's runtime logs) and emails the buyer
+ * their license.
+ *
+ * Two events matter: checkout.session.completed for the ordinary instant
+ * purchase, and checkout.session.async_payment_succeeded for
+ * delayed-notification payment methods, whose `completed` event arrives
+ * still unpaid. Both carry the session, and sessionSettled decides.
  *
  * The success page already claims and stores the license in the buying
  * browser; this email is what gets it to their other devices. Opening the
@@ -17,9 +25,18 @@ import { stripe } from "@/lib/stripe";
  * adds delivery, so if email ever fails the purchase still works.
  *
  * Sending goes through Resend's plain HTTP API. Without RESEND_API_KEY the
- * event is acknowledged and nothing is sent — Stripe must not retry forever
- * over a feature that is switched off.
+ * event is acknowledged and nothing is sent. Only plausibly transient
+ * failures (429, 5xx, network) are returned as errors for Stripe to retry;
+ * a misconfiguration — bad key, unverified domain, missing signing key —
+ * is logged and acknowledged, because retrying it cannot succeed and days
+ * of failures get the whole endpoint disabled.
  */
+
+const LICENSE_EVENTS = new Set([
+  "checkout.session.completed",
+  "checkout.session.async_payment_succeeded",
+]);
+
 export async function POST(request: Request): Promise<NextResponse> {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret) {
@@ -42,21 +59,22 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Bad signature" }, { status: 400 });
   }
 
-  if (event.type !== "checkout.session.completed") {
+  if (!LICENSE_EVENTS.has(event.type)) {
     return NextResponse.json({ received: true });
   }
 
-  const session = event.data.object;
+  // The Set check above admits only checkout.session.* events, whose data
+  // object is always a Checkout Session; the Set membership test just cannot
+  // narrow the union the way a === comparison would.
+  const session = event.data.object as Stripe.Checkout.Session;
   console.log(
-    `license purchase completed: session=${session.id} email=${session.customer_details?.email ?? "?"} total=${session.amount_total ?? "?"}`,
+    `license purchase event: type=${event.type} session=${session.id} email=${session.customer_details?.email ?? "?"} total=${session.amount_total ?? "?"} payment_status=${session.payment_status}`,
   );
 
-  const paid =
-    session.payment_status === "paid" ||
-    // What a checkout covered entirely by a 100%-off gift code reports.
-    session.payment_status === "no_payment_required";
   const email = session.customer_details?.email;
-  if (!paid || !email) return NextResponse.json({ received: true });
+  if (!sessionSettled(session) || !email) {
+    return NextResponse.json({ received: true });
+  }
 
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -64,47 +82,67 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ received: true });
   }
 
-  const claims = {
-    v: 1 as const,
-    email,
-    iat: session.created,
-    exp: session.created + LICENSE_TERM_SECONDS,
-  };
-  const token = mintLicense(claims);
-  const until = new Date(claims.exp * 1000).toDateString();
-  const link = `https://flipbook.photos/license/success?session_id=${session.id}`;
+  let response: Response;
+  try {
+    const claims = claimsForSession(session);
+    const token = mintLicense(claims);
+    const until = new Date(claims.exp * 1000).toDateString();
+    /* The link points at the origin this purchase actually ran on (the
+       checkout route builds success_url from its request origin), so a
+       sandbox purchase on a preview deployment emails a preview link that
+       resolves in the same Stripe account. */
+    const origin = new URL(session.success_url ?? "https://flipbook.photos")
+      .origin;
+    const link = `${origin}/license/success?session_id=${session.id}`;
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      from: process.env.LICENSE_EMAIL_FROM ?? "Flipbook <licenses@flipbook.photos>",
-      to: [email],
-      subject: "Your Flipbook license",
-      text: [
-        `Thanks for buying a year of Flipbook. It is yours until ${until}.`,
-        "",
-        "The browser you bought it in is already licensed. To use Flipbook on",
-        "another device, open this link there:",
-        "",
-        link,
-        "",
-        "Or paste this license under “Already bought it?” on flipbook.photos:",
-        "",
-        token,
-        "",
-        "Keep this email — the link re-issues your license any time.",
-      ].join("\n"),
-    }),
-  });
+    response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+        /* Stripe delivers at least once; keyed on the session, a redelivered
+           event repeats the same send instead of mailing a second token. */
+        "idempotency-key": `license-email-${session.id}`,
+      },
+      body: JSON.stringify({
+        from:
+          process.env.LICENSE_EMAIL_FROM ?? "Flipbook <licenses@flipbook.photos>",
+        to: [email],
+        subject: "Your Flipbook license",
+        text: [
+          `Thanks for buying a year of Flipbook. It is yours until ${until}.`,
+          "",
+          "The browser you bought it in is already licensed. To use Flipbook on",
+          "another device, open this link there:",
+          "",
+          link,
+          "",
+          "Or paste this license under “Already bought it?” on flipbook.photos:",
+          "",
+          token,
+          "",
+          "Keep this email — the link re-issues your license any time.",
+        ].join("\n"),
+      }),
+    });
+  } catch (error) {
+    // Minting throws only on misconfiguration (no signing key); fetch throws
+    // on network failure. Log both, but only ask Stripe to retry the one a
+    // retry could fix.
+    const transient = !(error instanceof Error && /LICENSE_SIGNING_KEY/.test(error.message));
+    console.error(`License email for ${session.id} threw:`, error);
+    return transient
+      ? NextResponse.json({ error: "Email failed" }, { status: 502 })
+      : NextResponse.json({ received: true });
+  }
 
-  if (!response.ok) {
-    // A 5xx makes Stripe retry later, which is what a transient mail
-    // failure deserves.
+  if (response.status === 429 || response.status >= 500) {
     return NextResponse.json({ error: "Email failed" }, { status: 502 });
+  }
+  if (!response.ok) {
+    console.error(
+      `License email for ${session.id} rejected (${response.status}): ${(await response.text()).slice(0, 300)}`,
+    );
   }
 
   return NextResponse.json({ received: true });

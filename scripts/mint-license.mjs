@@ -11,24 +11,21 @@
  *   node scripts/mint-license.mjs friend@example.com 2   two years
  *
  * Needs LICENSE_SIGNING_KEY, read from the environment or .env.local
- * (`vercel env pull` fetches it).
+ * (`vercel env pull` fetches it). Node strips the types from the imported
+ * lib/*.ts modules natively, so this shares the app's actual signing code
+ * and constants rather than a copy.
  */
 
-import { createPrivateKey, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
-const YEAR_SECONDS = 365 * 24 * 60 * 60;
+import { LICENSE_PREFIX, LICENSE_TERM_SECONDS } from "../lib/license.ts";
+import { signLicense } from "../lib/licenseSign.ts";
 
 let keyB64 = process.env.LICENSE_SIGNING_KEY;
 if (!keyB64) {
   try {
-    const env = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), "..", ".env.local"),
-      "utf8",
-    );
-    keyB64 = env.match(/^LICENSE_SIGNING_KEY="?([^"\n]+)"?$/m)?.[1];
+    const env = readFileSync(new URL("../.env.local", import.meta.url), "utf8");
+    keyB64 = env.match(/^LICENSE_SIGNING_KEY="?([^"\n]+?)"?$/m)?.[1];
   } catch {
     // fall through to the error below
   }
@@ -44,20 +41,9 @@ const email = process.argv[2] ?? "";
 const years = Math.max(1, Number(process.argv[3]) || 1);
 
 const now = Math.floor(Date.now() / 1000);
-const claims = { v: 1, email, iat: now, exp: now + years * YEAR_SECONDS };
+const claims = { v: 1, email, iat: now, exp: now + years * LICENSE_TERM_SECONDS };
 
-const key = createPrivateKey({
-  key: Buffer.from(keyB64, "base64"),
-  format: "der",
-  type: "pkcs8",
-});
-const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
-const signature = sign("sha256", Buffer.from(payload), {
-  key,
-  dsaEncoding: "ieee-p1363",
-}).toString("base64url");
-
-console.log(`FLIP.${payload}.${signature}`);
+console.log(signLicense(claims, keyB64, LICENSE_PREFIX));
 console.error(
   `\nValid until ${new Date(claims.exp * 1000).toDateString()}${email ? ` · ${email}` : ""}`,
 );

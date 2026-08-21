@@ -275,16 +275,24 @@ export default function Studio() {
     }
   }, [clearResult, photos.size]);
 
-  function patchSeries(id: string, patch: Partial<Series>) {
-    setSeries((previous) =>
-      previous.map((item) => (item.id === id ? { ...item, ...patch } : item)),
-    );
-    // A rename only changes the download filename, so it must not throw away a
-    // video someone just waited for. Changing which photos are in the series does.
-    if (patch.photoIds) clearResult();
-  }
+  /* These are useCallbacks not for style but for the frame strip: its frames
+     are memoized against exactly these identities, and during playback (when
+     none of their dependencies change) every beat re-renders this page. A
+     fresh handler per render would re-run a useSortable hook per photo,
+     several times a second, at up to MAX_PHOTOS photos. */
+  const patchSeries = useCallback(
+    (id: string, patch: Partial<Series>) => {
+      setSeries((previous) =>
+        previous.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+      );
+      // A rename only changes the download filename, so it must not throw away a
+      // video someone just waited for. Changing which photos are in the series does.
+      if (patch.photoIds) clearResult();
+    },
+    [clearResult],
+  );
 
-  function forgetPhotos(ids: string[]) {
+  const forgetPhotos = useCallback((ids: string[]) => {
     forgetPreviews(ids);
     setPhotos((previous) => {
       const next = new Map(previous);
@@ -298,31 +306,44 @@ export default function Studio() {
       }
       return next;
     });
-  }
+  }, []);
 
-  function removePhoto(photoId: string) {
-    if (!active) return;
-    const remaining = active.photoIds.filter((id) => id !== photoId);
-    if (remaining.length === 0) {
-      deleteSeries(active.id);
-      return;
-    }
-    patchSeries(active.id, { photoIds: remaining });
-    forgetPhotos([photoId]);
-  }
+  const deleteSeries = useCallback(
+    (id: string) => {
+      const target = series.find((item) => item.id === id);
+      forgetPhotos(target?.photoIds ?? []);
+      setSeries((previous) => {
+        const remaining = previous.filter((item) => item.id !== id);
+        setActiveId((current) =>
+          current === id ? (remaining[0]?.id ?? null) : current,
+        );
+        return remaining;
+      });
+      clearResult();
+    },
+    [series, forgetPhotos, clearResult],
+  );
 
-  function deleteSeries(id: string) {
-    const target = series.find((item) => item.id === id);
-    forgetPhotos(target?.photoIds ?? []);
-    setSeries((previous) => {
-      const remaining = previous.filter((item) => item.id !== id);
-      setActiveId((current) =>
-        current === id ? (remaining[0]?.id ?? null) : current,
-      );
-      return remaining;
-    });
-    clearResult();
-  }
+  const removePhoto = useCallback(
+    (photoId: string) => {
+      if (!active) return;
+      const remaining = active.photoIds.filter((id) => id !== photoId);
+      if (remaining.length === 0) {
+        deleteSeries(active.id);
+        return;
+      }
+      patchSeries(active.id, { photoIds: remaining });
+      forgetPhotos([photoId]);
+    },
+    [active, deleteSeries, patchSeries, forgetPhotos],
+  );
+
+  const reorderPhotos = useCallback(
+    (ids: string[]) => {
+      if (active) patchSeries(active.id, { photoIds: ids });
+    },
+    [active, patchSeries],
+  );
 
   function mergeUp(id: string) {
     setSeries((previous) => {
@@ -343,22 +364,25 @@ export default function Studio() {
     clearResult();
   }
 
-  function splitAt(index: number) {
-    if (!active || index <= 0) return;
-    setSeries((previous) => {
-      const at = previous.findIndex((item) => item.id === active.id);
-      if (at === -1) return previous;
-      const head = {
-        ...previous[at],
-        photoIds: active.photoIds.slice(0, index),
-      };
-      const tail = newSeries(`${active.title} (2)`, active.photoIds.slice(index));
-      const next = [...previous];
-      next.splice(at, 1, head, tail);
-      return next;
-    });
-    clearResult();
-  }
+  const splitAt = useCallback(
+    (index: number) => {
+      if (!active || index <= 0) return;
+      setSeries((previous) => {
+        const at = previous.findIndex((item) => item.id === active.id);
+        if (at === -1) return previous;
+        const head = {
+          ...previous[at],
+          photoIds: active.photoIds.slice(0, index),
+        };
+        const tail = newSeries(`${active.title} (2)`, active.photoIds.slice(index));
+        const next = [...previous];
+        next.splice(at, 1, head, tail);
+        return next;
+      });
+      clearResult();
+    },
+    [active, clearResult],
+  );
 
   async function exportVideo() {
     if (activePhotos.length === 0 || !gate.allowed) return;
@@ -519,9 +543,7 @@ export default function Studio() {
               <FrameStrip
                 photos={activePhotos}
                 currentIndex={currentPhoto}
-                onReorder={(ids) =>
-                  active && patchSeries(active.id, { photoIds: ids })
-                }
+                onReorder={reorderPhotos}
                 onRemove={removePhoto}
                 onSplit={splitAt}
               />

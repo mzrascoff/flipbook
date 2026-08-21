@@ -9,7 +9,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { memo, useCallback } from "react";
+import { memo, useCallback, useMemo } from "react";
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import {
   SortableContext,
@@ -47,19 +47,23 @@ export default function FrameStrip({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  /* Stable identities so the memoized frames below actually stay put. The
+     highlight moves several times a second during playback, and re-running a
+     useSortable hook per photo at that rate is real work on a phone. The ids
+     array matters most: SortableContext keys its context value on the items
+     array's identity, and a fresh array per render would re-render every
+     sortable frame each beat regardless of memo. */
+  const ids = useMemo(() => photos.map((p) => p.id), [photos]);
+
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const ids = photos.map((p) => p.id);
     const from = ids.indexOf(String(active.id));
     const to = ids.indexOf(String(over.id));
     if (from === -1 || to === -1) return;
     onReorder(arrayMove(ids, from, to));
   }
 
-  /* Stable identities so the memoized frames below actually stay put. The
-     highlight moves several times a second during playback, and re-running a
-     useSortable hook per photo at that rate is real work on a phone. */
   const move = useCallback(
     (index: number, delta: number) => {
       const to = index + delta;
@@ -76,10 +80,7 @@ export default function FrameStrip({
       modifiers={[restrictToHorizontalAxis]}
       onDragEnd={handleDragEnd}
     >
-      <SortableContext
-        items={photos.map((p) => p.id)}
-        strategy={horizontalListSortingStrategy}
-      >
+      <SortableContext items={ids} strategy={horizontalListSortingStrategy}>
         <ol
           className="flex snap-x gap-3 overflow-x-auto pb-2"
           data-testid="frame-strip"
@@ -144,9 +145,14 @@ const Frame = memo(function Frame({
         src={photo.thumbUrl}
         alt={`Frame ${index + 1}`}
         // Lazy: with imports of up to MAX_PHOTOS the strip would otherwise
-        // hold every decoded thumbnail at once, which is real memory on a phone.
+        // hold every decoded thumbnail at once, which is real memory on a
+        // phone. The reserved aspect ratio is what makes lazy actually lazy:
+        // an unsized image is ~zero pixels wide, so the whole strip would sit
+        // inside the lazy-load margin and load in one burst — and each late
+        // load would shift the layout under an in-progress drag.
         loading="lazy"
         decoding="async"
+        style={{ aspectRatio: `${photo.width} / ${photo.height}` }}
         className="h-24 w-auto max-w-40 rounded object-contain"
         draggable={false}
       />
