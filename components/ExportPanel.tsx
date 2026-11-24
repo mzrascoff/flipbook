@@ -211,7 +211,8 @@ function Paywall({ gate }: { gate: Gate }) {
           {state === "bad-token" && (
             <p className="w-full text-xs text-red-700 dark:text-red-300" role="alert">
               That license did not check out — it may be mistyped or expired.
-              The link in your Stripe receipt email re-issues it.
+              Paste it exactly as saved, or reopen the license link from the
+              file you downloaded after buying.
             </p>
           )}
         </div>
@@ -348,8 +349,6 @@ function ResultView({
       <p className="text-xs text-neutral-500">
         On an iPhone, use Share and pick <strong>Save Video</strong> — a plain
         download lands in Files rather than Photos.
-        {!saveEnabled &&
-          " Shareable links need a Vercel Blob store connected to this project."}
       </p>
     </div>
   );

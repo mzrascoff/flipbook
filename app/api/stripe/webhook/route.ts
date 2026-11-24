@@ -6,7 +6,8 @@ import {
   mintLicense,
   sessionSettled,
 } from "@/lib/licenseServer";
-import { stripe } from "@/lib/stripe";
+import { trustedOrigin } from "@/lib/origin";
+import { getStripe } from "@/lib/stripe";
 
 /**
  * Stripe webhook receiver, registered by scripts/stripe-setup.mjs. Logs every
@@ -50,7 +51,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   let event: Stripe.Event;
   try {
-    event = await stripe.webhooks.constructEventAsync(
+    event = await getStripe().webhooks.constructEventAsync(
       await request.text(),
       signature,
       secret,
@@ -90,9 +91,9 @@ export async function POST(request: Request): Promise<NextResponse> {
     /* The link points at the origin this purchase actually ran on (the
        checkout route builds success_url from its request origin), so a
        sandbox purchase on a preview deployment emails a preview link that
-       resolves in the same Stripe account. */
-    const origin = new URL(session.success_url ?? "https://flipbook.photos")
-      .origin;
+       resolves in the same Stripe account. trustedOrigin keeps it on a
+       domain this app runs on, whatever the session recorded. */
+    const origin = trustedOrigin(session.success_url);
     const link = `${origin}/license/success?session_id=${session.id}`;
 
     response = await fetch("https://api.resend.com/emails", {

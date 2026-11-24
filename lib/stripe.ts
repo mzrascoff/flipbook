@@ -2,8 +2,17 @@ import "server-only";
 
 import Stripe from "stripe";
 
-/** Server-side Stripe client. Keys come from the Vercel Stripe integration. */
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
+let client: Stripe | null = null;
+
+/**
+ * Server-side Stripe client. Keys come from the Vercel Stripe integration.
+ * Created on first use rather than at import, so `next build` (which loads
+ * route modules) works without STRIPE_SECRET_KEY in the environment.
+ */
+export function getStripe(): Stripe {
+  client ??= new Stripe(process.env.STRIPE_SECRET_KEY as string);
+  return client;
+}
 
 /**
  * Preview API version required for Managed Payments (per Stripe's setup

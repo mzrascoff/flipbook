@@ -13,12 +13,17 @@ type State =
 /**
  * Lands here from Stripe Checkout. Claims the license for this purchase,
  * stores it in this browser, and shows the token to keep for other devices.
- * The same URL sits in the receipt email, so it also serves as recovery.
+ * This page's own URL re-issues the license, so it doubles as recovery —
+ * which is why the downloaded license file carries it. Stripe's receipt does
+ * not link back here, so the page never sends buyers looking for it there.
  */
 export default function SuccessClient({
   sessionId,
+  emailEnabled,
 }: {
   sessionId: string | null;
+  /** Whether the webhook emails the license (RESEND_API_KEY is set). */
+  emailEnabled: boolean;
 }) {
   const [state, setState] = useState<State>(() =>
     sessionId
@@ -56,7 +61,7 @@ export default function SuccessClient({
           setState({
             kind: "error",
             message:
-              "The purchase could not be confirmed. If you paid, reopen the link in your Stripe receipt email — it re-issues your license any time.",
+              "The purchase could not be confirmed yet. If you paid, reload this page in a minute — its address re-issues your license any time.",
           });
         }
       }
@@ -82,8 +87,17 @@ export default function SuccessClient({
         <>
           <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
             Flipbook is yours until {state.expires}. This browser is already
-            licensed. To use it elsewhere, paste this license on any device —
-            or just open this page&apos;s link from your receipt email there.
+            licensed. To use it on another device, paste this license under
+            &ldquo;Already bought it?&rdquo; there.
+          </p>
+          <p
+            className="rounded-xl bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-900 dark:bg-amber-950/50 dark:text-amber-100"
+            data-testid="save-license-note"
+          >
+            <strong>Save your license now.</strong> There are no accounts, so
+            this license is how you get back in if you clear this browser or
+            switch devices. Download it, copy it somewhere safe, or bookmark
+            this page — its address re-issues the license any time.
           </p>
           <div className="flex flex-col gap-2">
             <code
@@ -92,21 +106,33 @@ export default function SuccessClient({
             >
               {state.token}
             </code>
-            <button
-              type="button"
-              onClick={async () => {
-                await navigator.clipboard.writeText(state.token);
-                setCopied(true);
-              }}
-              className="self-start rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
-            >
-              {copied ? "Copied" : "Copy license"}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => downloadLicense(state)}
+                data-testid="download-license"
+                className="rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+              >
+                Download license
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(state.token);
+                  setCopied(true);
+                }}
+                data-testid="copy-license"
+                className="rounded-full px-4 py-2 text-sm font-medium ring-1 ring-black/15 transition hover:bg-black/5 dark:ring-white/20 dark:hover:bg-white/10"
+              >
+                {copied ? "Copied" : "Copy license"}
+              </button>
+            </div>
           </div>
           {state.email && (
             <p className="text-xs text-neutral-500">
-              Purchased as {state.email}. Keep the Stripe receipt — its link
-              re-issues this license if you ever lose it.
+              Purchased as {state.email}.
+              {emailEnabled &&
+                " A copy of this license is on its way to that address."}
             </p>
           )}
         </>
@@ -126,4 +152,40 @@ export default function SuccessClient({
       </Link>
     </main>
   );
+}
+
+/**
+ * Saves the license as a small text file: the token to paste, plus this
+ * page's address, which re-issues the license if the token is ever lost.
+ */
+function downloadLicense({
+  token,
+  email,
+  expires,
+}: {
+  token: string;
+  email: string;
+  expires: string;
+}) {
+  const text = [
+    "Flipbook license",
+    "",
+    `Valid until: ${expires}`,
+    ...(email ? [`Purchased as: ${email}`] : []),
+    "",
+    "To use Flipbook on a device, open flipbook.photos, choose",
+    "\u201cAlready bought it?\u201d and paste this license:",
+    "",
+    token,
+    "",
+    "If you lose the license, open this link to have it re-issued:",
+    window.location.href,
+    "",
+  ].join("\n");
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "flipbook-license.txt";
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { MANAGED_PAYMENTS_VERSION, stripe } from "@/lib/stripe";
+import { trustedOrigin } from "@/lib/origin";
+import { MANAGED_PAYMENTS_VERSION, getStripe } from "@/lib/stripe";
 
 /**
  * The one-year-license price, looked up once by its stable key. An id would
@@ -12,7 +13,7 @@ let cachedPriceId: string | null = null;
 
 async function licensePriceId(): Promise<string> {
   if (cachedPriceId) return cachedPriceId;
-  const prices = await stripe.prices.list({
+  const prices = await getStripe().prices.list({
     lookup_keys: [PRICE_LOOKUP_KEY],
     limit: 1,
   });
@@ -35,11 +36,11 @@ async function licensePriceId(): Promise<string> {
  * version (both required by the Managed Payments setup guide).
  */
 export async function POST(request: Request) {
-  const origin =
-    request.headers.get("origin") ?? "https://flipbook.photos";
+  // The header is client-controlled; only origins this app runs on pass.
+  const origin = trustedOrigin(request.headers.get("origin"));
 
   try {
-    const session = await stripe.checkout.sessions.create(
+    const session = await getStripe().checkout.sessions.create(
       {
         mode: "payment",
         line_items: [{ price: await licensePriceId(), quantity: 1 }],
