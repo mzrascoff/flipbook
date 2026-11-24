@@ -36,9 +36,9 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
-  const body = (await request.json()) as HandleUploadBody;
-
   try {
+    // Inside the try, so a malformed body is a 400 rather than a crash.
+    const body = (await request.json()) as HandleUploadBody;
     const result = await handleUpload({
       body,
       request,

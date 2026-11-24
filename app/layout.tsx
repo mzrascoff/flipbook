@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+
+import { SHARE_IMAGE } from "@/lib/site";
+
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,10 +16,23 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const title = "Flipbook — photo series into little films";
+const description =
+  "Turn a series of photos into a short video, held one beat per photograph. Nothing filtered, nothing invented, and it all happens on your own device.";
+
 export const metadata: Metadata = {
-  title: "Flipbook — photo series into little films",
-  description:
-    "Turn a series of photos into a short video, held one beat per photograph. Nothing filtered, nothing invented, and it all happens on your own device.",
+  metadataBase: new URL("https://flipbook.photos"),
+  title,
+  description,
+  openGraph: {
+    title,
+    description,
+    url: "/",
+    siteName: "Flipbook",
+    type: "website",
+    images: [SHARE_IMAGE],
+  },
+  twitter: { card: "summary_large_image", title, description },
 };
 
 export const viewport: Viewport = {

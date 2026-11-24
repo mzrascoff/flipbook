@@ -66,6 +66,7 @@ export default function SeriesList({
                 <input
                   aria-label={`Name of ${item.title}`}
                   value={item.title}
+                  maxLength={120}
                   onChange={(event) => onRename(item.id, event.target.value)}
                   onFocus={() => onSelect(item.id)}
                   data-testid="series-title"

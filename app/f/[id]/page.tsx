@@ -41,7 +41,13 @@ export async function generateMetadata({
         },
       ],
     },
-    twitter: { card: "player", title: flipbook.title, description },
+    // "player" would need a player iframe URL; the poster card is what we have.
+    twitter: {
+      card: "summary_large_image",
+      title: flipbook.title,
+      description,
+      images: [flipbook.posterUrl],
+    },
   };
 }
 

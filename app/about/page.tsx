@@ -1,9 +1,25 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
-export const metadata = {
-  title: "About — Flipbook",
-  description:
-    "What Flipbook is, what happens to your photos, and what the license costs.",
+import { SHARE_IMAGE } from "@/lib/site";
+
+const title = "About — Flipbook";
+const description =
+  "What Flipbook is, what happens to your photos, and what the license costs.";
+
+export const metadata: Metadata = {
+  title,
+  description,
+  // A page's openGraph replaces the layout's wholesale, so it is restated.
+  openGraph: {
+    title,
+    description,
+    url: "/about",
+    siteName: "Flipbook",
+    type: "website",
+    images: [SHARE_IMAGE],
+  },
+  twitter: { card: "summary_large_image", title, description },
 };
 
 /**
